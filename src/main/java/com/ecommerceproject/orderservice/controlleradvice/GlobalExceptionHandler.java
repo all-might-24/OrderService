@@ -2,6 +2,7 @@ package com.ecommerceproject.orderservice.controlleradvice;
 
 import com.ecommerceproject.orderservice.dtos.responsedto.ExceptionDto;
 import com.ecommerceproject.orderservice.exceptions.InsufficientStockException;
+import com.ecommerceproject.orderservice.exceptions.InvalidOrderStateException;
 import com.ecommerceproject.orderservice.exceptions.OrderNotFoundException;
 import com.ecommerceproject.orderservice.exceptions.ProductNotFoundException;
 import org.springframework.http.HttpStatus;
@@ -38,6 +39,15 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(InsufficientStockException.class)
     public ResponseEntity<ExceptionDto> handleInsufficientStockException(InsufficientStockException e) {
+        int status = HttpStatus.BAD_REQUEST.value();
+        ExceptionDto dto = createExceptionDto(status, e.getMessage());
+        return ResponseEntity
+                .status(status)
+                .body(dto);
+    }
+
+    @ExceptionHandler(InvalidOrderStateException.class)
+    public ResponseEntity<ExceptionDto> handleInvalidOrderStateException (InvalidOrderStateException  e) {
         int status = HttpStatus.BAD_REQUEST.value();
         ExceptionDto dto = createExceptionDto(status, e.getMessage());
         return ResponseEntity

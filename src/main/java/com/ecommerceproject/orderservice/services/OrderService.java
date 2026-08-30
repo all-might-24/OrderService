@@ -6,7 +6,9 @@ import com.ecommerceproject.orderservice.dtos.responsedto.CreateOrderResponseDto
 import com.ecommerceproject.orderservice.dtos.responsedto.GetOrderResponseDto;
 import com.ecommerceproject.orderservice.dtos.responsedto.ProductResponseDto;
 import com.ecommerceproject.orderservice.exceptions.InsufficientStockException;
+import com.ecommerceproject.orderservice.exceptions.InvalidOrderStateException;
 import com.ecommerceproject.orderservice.exceptions.OrderNotFoundException;
+import com.ecommerceproject.orderservice.gateways.InventoryServiceGateway;
 import com.ecommerceproject.orderservice.gateways.ProductServiceGateway;
 import com.ecommerceproject.orderservice.mappers.OrderMapper;
 import com.ecommerceproject.orderservice.models.Order;
@@ -30,12 +32,16 @@ public class OrderService implements IOrderService{
 
     private final ProductServiceGateway productServiceGateway;
 
+    private final InventoryServiceGateway inventoryServiceGateway;
+
     public OrderService(OrderRepository orderRepository,
                         OrderMapper orderMapper,
-                        ProductServiceGateway productServiceGateway) {
+                        ProductServiceGateway productServiceGateway,
+                        InventoryServiceGateway inventoryServiceGateway) {
         this.orderRepository = orderRepository;
         this.orderMapper = orderMapper;
         this.productServiceGateway = productServiceGateway;
+        this.inventoryServiceGateway = inventoryServiceGateway;
     }
 
     @Override
@@ -47,61 +53,79 @@ public class OrderService implements IOrderService{
         order.setOrderStatus(OrderStatus.CREATED);
 
         List<OrderItem> orderItems = new ArrayList<>();
-
         BigDecimal totalAmount = BigDecimal.ZERO;
 
-        // To counter Duplicate order items to avoid multiple product service calls
-        Map<Long, Integer> productEntries = new HashMap<>();
+        // Consolidating duplicate product entries
+        Map<Long, Integer> productQuantities = new LinkedHashMap<>();
 
-        for(OrderItemsRequestDto products : createOrderRequestDto.getOrderItems()) {
-            productEntries.merge(products.getProductId(), products.getQuantity(), Integer::sum);
+        for (OrderItemsRequestDto requestItem : createOrderRequestDto.getOrderItems()) {
+
+            productQuantities.merge(
+                    requestItem.getProductId(),
+                    requestItem.getQuantity(),
+                    Integer::sum
+            );
         }
 
-        for (Map.Entry<Long, Integer> entry: productEntries.entrySet()) {
+        // Keeping track of reservations that actually succeeded
+        Map<Long, Integer> successfulReservations = new HashMap<>();
 
-            Long productId = entry.getKey();
-            Integer quantity = entry.getValue();
+        try {
+            for (Map.Entry<Long, Integer> entry : productQuantities.entrySet()) {
 
+                Long productId = entry.getKey();
+                Integer requestedQuantity = entry.getValue();
 
-            ProductResponseDto product = productServiceGateway.getProductById(productId);
+                // ProductService is used for product details
+                ProductResponseDto product = productServiceGateway.getProductById(productId);
 
-            if(product.getQty() < quantity) {
-                throw new InsufficientStockException("Insufficient stock for product " + productId + ". Requested: " + quantity + ", available: " + product.getQty());
+                // InventoryService is used for stock
+                inventoryServiceGateway.reserveProduct(productId, requestedQuantity);
+
+                // Reservation succeeded
+                successfulReservations.put(productId, requestedQuantity);
+
+                OrderItem orderItem = new OrderItem();
+
+                orderItem.setProductId(product.getId());
+                orderItem.setName(product.getTitle());
+                orderItem.setPrice(product.getPrice());
+                orderItem.setQuantity(requestedQuantity);
+
+                order.addOrderItem(orderItem);
+
+                BigDecimal itemTotal = product.getPrice().multiply(BigDecimal.valueOf(requestedQuantity));
+
+                totalAmount = totalAmount.add(itemTotal);
             }
 
-            OrderItem orderItem = new OrderItem();
+            order.setTotalAmount(totalAmount);
 
-            orderItem.setProductId(product.getId());
-            orderItem.setName(product.getTitle());
-            orderItem.setPrice(product.getPrice());
-            orderItem.setQuantity(quantity);
+            Order savedOrder = orderRepository.save(order);
 
-            orderItems.add(orderItem);
+            return orderMapper.toCreateOrderResponseDto(savedOrder);
 
-            BigDecimal itemTotal = product.getPrice().multiply(BigDecimal.valueOf(quantity));
+        } catch (Exception exception) {
 
-            totalAmount = totalAmount.add(itemTotal);
+            // Compensate reservations that already succeeded
+            for (Map.Entry<Long, Integer> reservation : successfulReservations.entrySet()) {
+
+                try {
+                    inventoryServiceGateway.releaseProduct(reservation.getKey(), reservation.getValue());
+                } catch (Exception releaseException) {
+                    // We'll add proper logging/recovery in Phase 7
+                }
+            }
+            throw exception;
         }
-        order.setItemList(orderItems);
-        order.setTotalAmount(totalAmount);
-
-        Order savedOrder = orderRepository.save(order);
-
-        CreateOrderResponseDto response = new CreateOrderResponseDto();
-
-        response.setOrderId(savedOrder.getOrderId());
-        response.setTotalAmount(savedOrder.getTotalAmount());
-        response.setOrderStatus(savedOrder.getOrderStatus());
-
-        return response;
     }
 
     @Override
     public GetOrderResponseDto getOrderById(Long userId, Long orderId) {
         Order order = findOrderById(orderId);
 
-        if(!order.getOrderId().equals(orderId)) {
-            throw new OrderNotFoundException("Order not found with user_id : "  + userId);
+        if (!order.getUserId().equals(userId)) {
+            throw new OrderNotFoundException("Order not found with order_id : " + orderId);
         }
 
         return orderMapper.toGetOrderResponseDto(order);
@@ -122,6 +146,71 @@ public class OrderService implements IOrderService{
             throw new OrderNotFoundException("Order not found with user_id : "  + userId);
         }
         return optionalOrder.get();
+    }
+
+    @Override
+    @Transactional
+    public GetOrderResponseDto shipOrder(Long userId, Long orderId) {
+        Order order = findOrderById(orderId);
+
+        if (!order.getUserId().equals(userId)) {
+            throw new OrderNotFoundException("Order not found with order_id : " + orderId);
+        }
+
+        if(order.getOrderStatus() != OrderStatus.CREATED) {
+            throw new InvalidOrderStateException("Only Orders with CREATED status can be shipped");
+        }
+
+        order.setOrderStatus(OrderStatus.SHIPPED);
+
+        return orderMapper.toGetOrderResponseDto(orderRepository.save(order));
+    }
+
+    @Override
+    @Transactional
+    public GetOrderResponseDto deliverOrder(Long userId, Long orderId) {
+        Order order = findOrderById(orderId);
+
+        if (!order.getUserId().equals(userId)) {
+            throw new OrderNotFoundException("Order not found with order_id : " + orderId);
+        }
+
+        if(order.getOrderStatus() != OrderStatus.SHIPPED) {
+            throw new InvalidOrderStateException("Only Orders with SHIPPED status can be delivered");
+        }
+
+        for (OrderItem orderItem : order.getItemList()) {
+            inventoryServiceGateway.commitProduct(orderItem.getProductId(), orderItem.getQuantity());
+        }
+
+        order.setOrderStatus(OrderStatus.DELIVERED);
+        return orderMapper.toGetOrderResponseDto(orderRepository.save(order));
+    }
+
+
+    @Override
+    @Transactional
+    public GetOrderResponseDto cancelOrder(Long userId, Long orderId) {
+        Order order = findOrderById(orderId);
+
+        if (!order.getUserId().equals(userId)) {
+            throw new OrderNotFoundException("Order not found with order_id : " + orderId);
+        }
+
+        if (order.getOrderStatus() == OrderStatus.DELIVERED) {
+            throw new InvalidOrderStateException("Orders with DELIVERED status can be cancelled");
+        }
+
+        if(order.getOrderStatus() == OrderStatus.CANCELLED) {
+            throw new InvalidOrderStateException("Order is already cancelled");
+        }
+
+        for (OrderItem orderItem : order.getItemList()) {
+            inventoryServiceGateway.releaseProduct(orderItem.getProductId(), orderItem.getQuantity());
+        }
+
+        order.setOrderStatus(OrderStatus.CANCELLED);
+        return orderMapper.toGetOrderResponseDto(orderRepository.save(order));
     }
 
     private Order findOrderById(Long orderId) {

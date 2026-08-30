@@ -4,7 +4,9 @@ import com.ecommerceproject.orderservice.clients.ProductServiceClient;
 import com.ecommerceproject.orderservice.dtos.requestdto.CreateOrderRequestDto;
 import com.ecommerceproject.orderservice.dtos.responsedto.CreateOrderResponseDto;
 import com.ecommerceproject.orderservice.dtos.responsedto.GetOrderResponseDto;
+import com.ecommerceproject.orderservice.dtos.responsedto.InventoryResponseDto;
 import com.ecommerceproject.orderservice.dtos.responsedto.ProductResponseDto;
+import com.ecommerceproject.orderservice.gateways.InventoryServiceGateway;
 import com.ecommerceproject.orderservice.gateways.ProductServiceGateway;
 import com.ecommerceproject.orderservice.services.IOrderService;
 import jakarta.validation.Valid;
@@ -55,5 +57,32 @@ public class OrderController {
         Page<GetOrderResponseDto> response = orderService.getAllOrders(userId, pageable);
 
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("{orderId}/ship")
+    public ResponseEntity<GetOrderResponseDto> shipOrder(@PathVariable("orderId") Long orderId) {
+        Long userId = 1L;
+
+        GetOrderResponseDto getOrderResponseDto = orderService.shipOrder(userId, orderId);
+
+        return ResponseEntity.ok(getOrderResponseDto);
+    }
+
+    @PostMapping("{orderId}/deliver")
+    public ResponseEntity<GetOrderResponseDto> deliverOrder(@PathVariable("orderId") Long orderId) {
+        Long userId = 1L;
+
+        GetOrderResponseDto getOrderResponseDto = orderService.deliverOrder(userId, orderId);
+
+        return ResponseEntity.ok(getOrderResponseDto);
+    }
+
+    @PostMapping("{orderId}/cancel")
+    public ResponseEntity<GetOrderResponseDto> cancelOrder(@PathVariable("orderId") Long orderId) {
+        Long userId = 1L;
+
+        GetOrderResponseDto getOrderResponseDto = orderService.cancelOrder(userId, orderId);
+
+        return ResponseEntity.ok(getOrderResponseDto);
     }
 }

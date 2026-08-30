@@ -1,9 +1,11 @@
 package com.ecommerceproject.orderservice.mappers;
 
+import com.ecommerceproject.orderservice.dtos.responsedto.CreateOrderResponseDto;
 import com.ecommerceproject.orderservice.dtos.responsedto.GetOrderResponseDto;
 import com.ecommerceproject.orderservice.dtos.responsedto.OrderItemResponseDto;
 import com.ecommerceproject.orderservice.models.Order;
 import com.ecommerceproject.orderservice.models.OrderItem;
+import com.ecommerceproject.orderservice.models.enums.OrderStatus;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -16,9 +18,10 @@ public class OrderMapper {
 
         GetOrderResponseDto response = new GetOrderResponseDto();
 
-        response.setOrderId(order.getOrderId());
+        response.setOrderId(order.getId());
         response.setTotalAmount(order.getTotalAmount());
         response.setOrderStatus(order.getOrderStatus());
+        response.setUserId(order.getUserId());
 
         List<OrderItemResponseDto> items = order.getItemList()
                 .stream()
@@ -45,5 +48,16 @@ public class OrderMapper {
         response.setSubtotal(subtotal);
 
         return response;
+    }
+
+    public CreateOrderResponseDto toCreateOrderResponseDto(Order order) {
+
+        CreateOrderResponseDto responseDto = new CreateOrderResponseDto();
+
+        responseDto.setOrderId(order.getId());
+        responseDto.setTotalAmount(order.getTotalAmount());
+        responseDto.setOrderStatus(order.getOrderStatus());
+
+        return responseDto;
     }
 }

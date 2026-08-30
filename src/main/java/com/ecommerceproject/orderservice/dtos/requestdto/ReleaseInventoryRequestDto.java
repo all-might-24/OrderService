@@ -7,8 +7,7 @@ import lombok.Setter;
 
 @Getter
 @Setter
-public class OrderItemsRequestDto {
-
+public class ReleaseInventoryRequestDto {
     @NotNull(message = "product id cannot be null")
     @Positive(message = "product id cannot be negative")
     private Long productId;

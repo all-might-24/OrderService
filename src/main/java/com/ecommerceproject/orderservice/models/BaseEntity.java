@@ -18,7 +18,7 @@ public class BaseEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long orderId;
+    private Long id;
 
     @CreatedDate
     @Column(nullable = false, updatable = false)

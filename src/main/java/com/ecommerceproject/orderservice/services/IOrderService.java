@@ -17,4 +17,10 @@ public interface IOrderService {
 
     Order findOrderByUserId(Long userId);
 
+    GetOrderResponseDto shipOrder(Long userId, Long orderId);
+
+    GetOrderResponseDto deliverOrder(Long userId, Long orderId);
+
+    GetOrderResponseDto cancelOrder(Long userId, Long orderId);
+
 }
