@@ -16,6 +16,8 @@ import com.ecommerceproject.orderservice.models.OrderItem;
 import com.ecommerceproject.orderservice.models.enums.OrderStatus;
 import com.ecommerceproject.orderservice.repositories.OrderRepository;
 import jakarta.transaction.Transactional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -33,6 +35,8 @@ public class OrderService implements IOrderService{
     private final ProductServiceGateway productServiceGateway;
 
     private final InventoryServiceGateway inventoryServiceGateway;
+
+    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
 
     public OrderService(OrderRepository orderRepository,
                         OrderMapper orderMapper,
@@ -52,9 +56,9 @@ public class OrderService implements IOrderService{
         order.setUserId(userId);
         order.setOrderStatus(OrderStatus.CREATED);
 
-        List<OrderItem> orderItems = new ArrayList<>();
         BigDecimal totalAmount = BigDecimal.ZERO;
 
+        String requestId = UUID.randomUUID().toString();
         // Consolidating duplicate product entries
         Map<Long, Integer> productQuantities = new LinkedHashMap<>();
 
@@ -79,8 +83,9 @@ public class OrderService implements IOrderService{
                 // ProductService is used for product details
                 ProductResponseDto product = productServiceGateway.getProductById(productId);
 
+                String operationId = "reserve-" + requestId + "-" + productId;
                 // InventoryService is used for stock
-                inventoryServiceGateway.reserveProduct(productId, requestedQuantity);
+                inventoryServiceGateway.reserveProduct(productId, requestedQuantity, operationId);
 
                 // Reservation succeeded
                 successfulReservations.put(productId, requestedQuantity);
@@ -111,9 +116,16 @@ public class OrderService implements IOrderService{
             for (Map.Entry<Long, Integer> reservation : successfulReservations.entrySet()) {
 
                 try {
-                    inventoryServiceGateway.releaseProduct(reservation.getKey(), reservation.getValue());
+                    String operationId = "release-" + requestId + "-" + reservation.getKey();
+                    inventoryServiceGateway.releaseProduct(reservation.getKey(), reservation.getValue(), operationId);
                 } catch (Exception releaseException) {
-                    // We'll add proper logging/recovery in Phase 7
+                    log.error(
+                            "Failed to compensate inventory reservation. productId={}, quantity={}, requestId={}",
+                            reservation.getKey(),
+                            reservation.getValue(),
+                            requestId,
+                            releaseException
+                    );
                 }
             }
             throw exception;
@@ -150,12 +162,8 @@ public class OrderService implements IOrderService{
 
     @Override
     @Transactional
-    public GetOrderResponseDto shipOrder(Long userId, Long orderId) {
+    public GetOrderResponseDto shipOrder(Long orderId) {
         Order order = findOrderById(orderId);
-
-        if (!order.getUserId().equals(userId)) {
-            throw new OrderNotFoundException("Order not found with order_id : " + orderId);
-        }
 
         if(order.getOrderStatus() != OrderStatus.CREATED) {
             throw new InvalidOrderStateException("Only Orders with CREATED status can be shipped");
@@ -168,19 +176,17 @@ public class OrderService implements IOrderService{
 
     @Override
     @Transactional
-    public GetOrderResponseDto deliverOrder(Long userId, Long orderId) {
+    public GetOrderResponseDto deliverOrder(Long orderId) {
         Order order = findOrderById(orderId);
 
-        if (!order.getUserId().equals(userId)) {
-            throw new OrderNotFoundException("Order not found with order_id : " + orderId);
-        }
 
         if(order.getOrderStatus() != OrderStatus.SHIPPED) {
             throw new InvalidOrderStateException("Only Orders with SHIPPED status can be delivered");
         }
 
         for (OrderItem orderItem : order.getItemList()) {
-            inventoryServiceGateway.commitProduct(orderItem.getProductId(), orderItem.getQuantity());
+            String operationId = "commit-" + orderId + "-" + orderItem.getProductId();
+            inventoryServiceGateway.commitProduct(orderItem.getProductId(), orderItem.getQuantity(), operationId);
         }
 
         order.setOrderStatus(OrderStatus.DELIVERED);
@@ -198,7 +204,7 @@ public class OrderService implements IOrderService{
         }
 
         if (order.getOrderStatus() == OrderStatus.DELIVERED) {
-            throw new InvalidOrderStateException("Orders with DELIVERED status can be cancelled");
+            throw new InvalidOrderStateException("Orders with DELIVERED status cannot be cancelled");
         }
 
         if(order.getOrderStatus() == OrderStatus.CANCELLED) {
@@ -206,7 +212,8 @@ public class OrderService implements IOrderService{
         }
 
         for (OrderItem orderItem : order.getItemList()) {
-            inventoryServiceGateway.releaseProduct(orderItem.getProductId(), orderItem.getQuantity());
+            String operationId = "release-" + orderId + "-" + orderItem.getProductId();
+            inventoryServiceGateway.releaseProduct(orderItem.getProductId(), orderItem.getQuantity(), operationId);
         }
 
         order.setOrderStatus(OrderStatus.CANCELLED);

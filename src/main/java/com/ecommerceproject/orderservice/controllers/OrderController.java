@@ -1,19 +1,17 @@
 package com.ecommerceproject.orderservice.controllers;
 
-import com.ecommerceproject.orderservice.clients.ProductServiceClient;
 import com.ecommerceproject.orderservice.dtos.requestdto.CreateOrderRequestDto;
 import com.ecommerceproject.orderservice.dtos.responsedto.CreateOrderResponseDto;
 import com.ecommerceproject.orderservice.dtos.responsedto.GetOrderResponseDto;
-import com.ecommerceproject.orderservice.dtos.responsedto.InventoryResponseDto;
-import com.ecommerceproject.orderservice.dtos.responsedto.ProductResponseDto;
-import com.ecommerceproject.orderservice.gateways.InventoryServiceGateway;
-import com.ecommerceproject.orderservice.gateways.ProductServiceGateway;
+
 import com.ecommerceproject.orderservice.services.IOrderService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -29,8 +27,8 @@ public class OrderController {
 
     @PostMapping
     public ResponseEntity<CreateOrderResponseDto> createOrder(@RequestBody @Valid CreateOrderRequestDto request) {
-        // temporary until JWT integration
-        Long userId = 1L;
+
+        Long userId = getAuthenticatedUserId();
 
         CreateOrderResponseDto response = orderService.createOrder(userId, request);
 
@@ -41,8 +39,8 @@ public class OrderController {
 
     @GetMapping("/{orderId}")
     public ResponseEntity<GetOrderResponseDto> getOrderById(@PathVariable Long orderId) {
-        // Temporary until JWT integration
-        Long userId = 1L;
+
+        Long userId = getAuthenticatedUserId();
 
         GetOrderResponseDto response = orderService.getOrderById(userId, orderId);
 
@@ -51,8 +49,8 @@ public class OrderController {
 
     @GetMapping("/my-orders")
     public ResponseEntity<Page<GetOrderResponseDto>> getMyOrders(Pageable pageable) {
-        // Temporary until JWT integration
-        Long userId = 1L;
+
+        Long userId = getAuthenticatedUserId();
 
         Page<GetOrderResponseDto> response = orderService.getAllOrders(userId, pageable);
 
@@ -61,28 +59,30 @@ public class OrderController {
 
     @PostMapping("{orderId}/ship")
     public ResponseEntity<GetOrderResponseDto> shipOrder(@PathVariable("orderId") Long orderId) {
-        Long userId = 1L;
-
-        GetOrderResponseDto getOrderResponseDto = orderService.shipOrder(userId, orderId);
+        GetOrderResponseDto getOrderResponseDto = orderService.shipOrder(orderId);
 
         return ResponseEntity.ok(getOrderResponseDto);
     }
 
     @PostMapping("{orderId}/deliver")
     public ResponseEntity<GetOrderResponseDto> deliverOrder(@PathVariable("orderId") Long orderId) {
-        Long userId = 1L;
 
-        GetOrderResponseDto getOrderResponseDto = orderService.deliverOrder(userId, orderId);
+        GetOrderResponseDto getOrderResponseDto = orderService.deliverOrder(orderId);
 
         return ResponseEntity.ok(getOrderResponseDto);
     }
 
     @PostMapping("{orderId}/cancel")
     public ResponseEntity<GetOrderResponseDto> cancelOrder(@PathVariable("orderId") Long orderId) {
-        Long userId = 1L;
+        Long userId = getAuthenticatedUserId();
 
         GetOrderResponseDto getOrderResponseDto = orderService.cancelOrder(userId, orderId);
 
         return ResponseEntity.ok(getOrderResponseDto);
+    }
+
+    private Long getAuthenticatedUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return (Long) authentication.getPrincipal();
     }
 }

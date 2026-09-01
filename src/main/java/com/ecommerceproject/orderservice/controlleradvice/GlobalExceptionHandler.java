@@ -1,10 +1,7 @@
 package com.ecommerceproject.orderservice.controlleradvice;
 
 import com.ecommerceproject.orderservice.dtos.responsedto.ExceptionDto;
-import com.ecommerceproject.orderservice.exceptions.InsufficientStockException;
-import com.ecommerceproject.orderservice.exceptions.InvalidOrderStateException;
-import com.ecommerceproject.orderservice.exceptions.OrderNotFoundException;
-import com.ecommerceproject.orderservice.exceptions.ProductNotFoundException;
+import com.ecommerceproject.orderservice.exceptions.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -69,6 +66,36 @@ public class GlobalExceptionHandler {
                 .status(status)
                 .body(dto);
 
+    }
+
+    @ExceptionHandler(InventoryServiceUnavailableException.class)
+    public ResponseEntity<ExceptionDto> handleInventoryServiceUnavailableException(InventoryServiceUnavailableException e) {
+
+        int status = HttpStatus.SERVICE_UNAVAILABLE.value();
+        ExceptionDto dto = createExceptionDto(status, e.getMessage());
+
+        return ResponseEntity
+                .status(status)
+                .body(dto);
+    }
+
+    @ExceptionHandler(InventoryOperationException.class)
+    public ResponseEntity<ExceptionDto> handleInventoryOperationException(InventoryOperationException e) {
+
+        int status = HttpStatus.BAD_GATEWAY.value();
+        ExceptionDto dto = createExceptionDto(status, e.getMessage());
+        return ResponseEntity
+                .status(status)
+                .body(dto);
+    }
+
+    @ExceptionHandler(ProductServiceUnavailableException.class)
+    public ResponseEntity<ExceptionDto> handleProductServiceUnavailableException(ProductServiceUnavailableException e) {
+        int status = HttpStatus.INTERNAL_SERVER_ERROR.value();
+        ExceptionDto dto = createExceptionDto(status, e.getMessage());
+        return ResponseEntity
+                .status(status)
+                .body(dto);
     }
 
     private ExceptionDto createExceptionDto(int status, String message) {
